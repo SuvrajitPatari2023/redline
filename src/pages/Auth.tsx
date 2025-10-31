@@ -58,7 +58,7 @@ const Auth = () => {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/`,
+            emailRedirectTo: `${window.location.origin}/dashboard`,
             data: { full_name: fullName }
           }
         });
@@ -66,15 +66,56 @@ const Auth = () => {
         if (signUpError) throw signUpError;
 
         if (authData.user) {
+          // Insert user role
           const { error: roleError } = await supabase
             .from("user_roles")
             .insert({ user_id: authData.user.id, role: role as any, verified: false });
 
-          if (roleError) throw roleError;
+          if (roleError) {
+            console.error("Role error:", roleError);
+            throw roleError;
+          }
+
+          // Create role-specific profile
+          if (role === "donor") {
+            await supabase.from("donors").insert({
+              user_id: authData.user.id,
+              blood_type: "O+",
+              date_of_birth: new Date().toISOString().split('T')[0],
+              city: "",
+              state: "",
+              available: true
+            });
+          } else if (role === "hospital") {
+            await supabase.from("hospitals").insert({
+              user_id: authData.user.id,
+              hospital_name: fullName,
+              address: "",
+              city: "",
+              state: "",
+              registration_number: ""
+            });
+          } else if (role === "blood_bank") {
+            await supabase.from("blood_banks").insert({
+              user_id: authData.user.id,
+              bank_name: fullName,
+              address: "",
+              city: "",
+              state: "",
+              registration_number: ""
+            });
+          } else if (role === "expert") {
+            await supabase.from("experts").insert({
+              user_id: authData.user.id,
+              specialization: "",
+              qualification: "",
+              available: true
+            });
+          }
         }
 
-        toast({ title: "Success", description: "Account created! Please complete your profile." });
-        navigate("/dashboard");
+        toast({ title: "Success", description: "Account created! Redirecting to dashboard..." });
+        setTimeout(() => navigate("/dashboard"), 1000);
       }
     } catch (error: any) {
       toast({

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Navigation from "@/components/Navigation";
 import Chatbot from "@/components/Chatbot";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,16 +7,76 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, MapPin, Phone, Mail } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const DonorSearch = () => {
   const [bloodType, setBloodType] = useState("");
   const [city, setCity] = useState("");
+  const [donors, setDonors] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedDonor, setSelectedDonor] = useState<any>(null);
+  const [contactDialogOpen, setContactDialogOpen] = useState(false);
+  const { toast } = useToast();
 
-  const mockDonors = [
-    { name: "Alice Johnson", bloodType: "O+", city: "Mumbai", phone: "+91-9876543210", available: true },
-    { name: "Bob Smith", bloodType: "A+", city: "Delhi", phone: "+91-9876543211", available: true },
-    { name: "Carol Williams", bloodType: "B-", city: "Bangalore", phone: "+91-9876543212", available: false },
-  ];
+  useEffect(() => {
+    fetchDonors();
+  }, []);
+
+  const fetchDonors = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("donors")
+        .select(`
+          *,
+          profiles:user_id (full_name, phone, email)
+        `)
+        .eq("available", true);
+
+      if (error) throw error;
+      setDonors(data || []);
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearch = async () => {
+    setLoading(true);
+    try {
+      let query = supabase
+        .from("donors")
+        .select(`
+          *,
+          profiles:user_id (full_name, phone, email)
+        `)
+        .eq("available", true);
+
+      if (bloodType && bloodType !== "all") {
+        query = query.eq("blood_type", bloodType as any);
+      }
+      if (city) {
+        query = query.ilike("city", `%${city}%`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setDonors(data || []);
+      toast({ title: "Success", description: `Found ${data?.length || 0} donors` });
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleContactDonor = (donor: any) => {
+    setSelectedDonor(donor);
+    setContactDialogOpen(true);
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -69,47 +129,60 @@ const DonorSearch = () => {
                 </div>
 
                 <div className="flex items-end">
-                  <Button className="w-full">
+                  <Button className="w-full" onClick={handleSearch} disabled={loading}>
                     <Search className="mr-2 h-4 w-4" />
-                    Search Donors
+                    {loading ? "Searching..." : "Search Donors"}
                   </Button>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {mockDonors.map((donor, idx) => (
-              <Card key={idx} className={!donor.available ? "opacity-60" : ""}>
-                <CardHeader>
-                  <CardTitle className="text-lg flex items-center justify-between">
-                    {donor.name}
-                    <span className={`text-sm px-3 py-1 rounded-full ${
-                      donor.available ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"
-                    }`}>
-                      {donor.available ? "Available" : "Unavailable"}
-                    </span>
-                  </CardTitle>
-                  <CardDescription>Blood Type: {donor.bloodType}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <span>{donor.city}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{donor.phone}</span>
-                  </div>
-                  <div className="pt-2">
-                    <Button className="w-full" disabled={!donor.available}>
-                      {donor.available ? "Contact Donor" : "Not Available"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          {loading ? (
+            <div className="flex justify-center p-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            </div>
+          ) : donors.length === 0 ? (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <p className="text-muted-foreground">No donors found. Try adjusting your search criteria.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {donors.map((donor) => (
+                <Card key={donor.id}>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center justify-between">
+                      {donor.profiles?.full_name || "Anonymous"}
+                      <span className="text-sm px-3 py-1 rounded-full bg-green-100 text-green-700">
+                        Available
+                      </span>
+                    </CardTitle>
+                    <CardDescription>Blood Type: {donor.blood_type}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                      <span>{donor.city}, {donor.state}</span>
+                    </div>
+                    {donor.profiles?.phone && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <span>{donor.profiles.phone}</span>
+                      </div>
+                    )}
+                    <div className="pt-2">
+                      <Button className="w-full" onClick={() => handleContactDonor(donor)}>
+                        <Mail className="mr-2 h-4 w-4" />
+                        Contact Donor
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
 
           <Card>
             <CardHeader>
@@ -129,6 +202,55 @@ const DonorSearch = () => {
         </div>
       </main>
       <Chatbot />
+
+      <Dialog open={contactDialogOpen} onOpenChange={setContactDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Contact Donor</DialogTitle>
+            <DialogDescription>
+              Donor contact information
+            </DialogDescription>
+          </DialogHeader>
+          {selectedDonor && (
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium">Name</p>
+                <p className="text-sm text-muted-foreground">{selectedDonor.profiles?.full_name || "Anonymous"}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium">Blood Type</p>
+                <p className="text-sm text-muted-foreground">{selectedDonor.blood_type}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium">Location</p>
+                <p className="text-sm text-muted-foreground">{selectedDonor.city}, {selectedDonor.state}</p>
+              </div>
+              {selectedDonor.profiles?.email && (
+                <div>
+                  <p className="text-sm font-medium">Email</p>
+                  <a href={`mailto:${selectedDonor.profiles.email}`} className="text-sm text-primary hover:underline">
+                    {selectedDonor.profiles.email}
+                  </a>
+                </div>
+              )}
+              {selectedDonor.profiles?.phone && (
+                <div>
+                  <p className="text-sm font-medium">Phone</p>
+                  <a href={`tel:${selectedDonor.profiles.phone}`} className="text-sm text-primary hover:underline">
+                    {selectedDonor.profiles.phone}
+                  </a>
+                </div>
+              )}
+              <Button className="w-full" onClick={() => {
+                toast({ title: "Message sent", description: "The donor will be notified of your request." });
+                setContactDialogOpen(false);
+              }}>
+                Send Message
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

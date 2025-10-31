@@ -39,7 +39,12 @@ const Emergency = () => {
         .single();
 
       if (!hospital) {
-        toast({ title: "Error", description: "Hospital profile not found", variant: "destructive" });
+        toast({ 
+          title: "Profile Setup Required", 
+          description: "Please complete your hospital profile first. Contact support for assistance.", 
+          variant: "destructive" 
+        });
+        setLoading(false);
         return;
       }
 
